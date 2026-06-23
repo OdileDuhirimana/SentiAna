@@ -41,7 +41,7 @@ async def submit_feedback(payload: FeedbackIn, db: Session = Depends(get_db)) ->
         company_id=company_id,
         source=source,
         text_original=text,
-        text_en=text if res.get("language") == "en" else text,
+        text_en=res.get("text_en", text),
         language=res.get("language", "en"),
         emotions_json=res.get("emotions"),
         toxicity_json=res.get("toxicity"),

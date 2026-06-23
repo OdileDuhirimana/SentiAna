@@ -1,5 +1,5 @@
 from typing import Dict, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Body
 from pydantic import BaseModel
 from app.security import get_api_key
 from app.services.nlp import reload_models
@@ -14,7 +14,9 @@ class ReloadModelsPayload(BaseModel):
 
 
 @router.post("/reload-models")
-def admin_reload_models(payload: ReloadModelsPayload = ReloadModelsPayload()) -> Dict:
+def admin_reload_models(payload: Optional[ReloadModelsPayload] = Body(default=None)) -> Dict:
+    if payload is None:
+        payload = ReloadModelsPayload()
     result = reload_models(
         emotion_model=payload.emotion_model,
         toxicity_model=payload.toxicity_model,

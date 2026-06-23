@@ -229,6 +229,7 @@ class NLPEngine:
         else:
             result = self._analyze_cached(text_for_analysis)
         result["language"] = language
+        result["text_en"] = text_for_analysis
         if polarity:
             result["polarity"] = polarity
         return result
