@@ -1,7 +1,8 @@
 from functools import lru_cache
-from typing import Dict, List
+from typing import Dict, List, Protocol
 from langdetect import detect
 import yake
+import re
 import os
 try:
     from transformers import pipeline  # type: ignore
@@ -17,6 +18,14 @@ except Exception:
 _DEMO_MODE = os.environ.get("DEMO_MODE", "0") in {"1", "true", "True"}
 
 SUPPORTED_LANGS = {"en", "fr", "rw", "sw"}
+
+_WORD_RE = re.compile(r"[^\w\s']")  # strip punctuation for word matching
+
+
+class _NLPEngineProto(Protocol):
+    def analyze(self, text: str, lang_hint: str | None = None) -> Dict: ...
+    def get_models(self) -> Dict: ...
+    def reset(self) -> Dict: ...
 
 class NLPEngine:
     def __init__(self) -> None:
@@ -304,7 +313,8 @@ class DemoNLPEngine:
         if lang_hint and lang_hint in SUPPORTED_LANGS:
             language = lang_hint
 
-        words = text.lower().split()
+        cleaned = _WORD_RE.sub("", text.lower())
+        words = cleaned.split()
         word_set = set(words)
         total = max(len(words), 1)
         pos = len(word_set & self._POS)
@@ -332,8 +342,9 @@ class DemoNLPEngine:
         except Exception:
             aspects = []
 
-        pos_pol = round(max(0.0, 0.5 + (pos - neg) / total), 3)
-        neg_pol = round(max(0.0, 0.5 + (neg - pos) / total), 3)
+        pos_pol = round(min(1.0, max(0.0, 0.5 + (pos - neg) / total)), 3)
+        neg_pol = round(min(1.0, max(0.0, 0.5 + (neg - pos) / total)), 3)
+        neutral_pol = round(max(0.0, 1.0 - pos_pol - neg_pol), 3)
         return {
             "emotions": emotions,
             "toxicity": {"toxic": toxic_score, "non-toxic": round(1.0 - toxic_score, 3)},
@@ -342,7 +353,7 @@ class DemoNLPEngine:
             "aspects": aspects,
             "language": language,
             "text_en": text,
-            "polarity": {"positive": pos_pol, "neutral": round(max(0.0, 1.0 - pos_pol - neg_pol), 3), "negative": neg_pol},
+            "polarity": {"positive": pos_pol, "neutral": neutral_pol, "negative": neg_pol},
             "demo": True,
         }
 
@@ -356,16 +367,20 @@ class DemoNLPEngine:
         raise AttributeError(f"DemoNLPEngine has no attribute '{name}'")
 
 
-engine: LazyNLPEngine | DemoNLPEngine = DemoNLPEngine() if _DEMO_MODE else LazyNLPEngine()
+engine: _NLPEngineProto = DemoNLPEngine() if _DEMO_MODE else LazyNLPEngine()
+
 
 def reload_models(emotion_model: str | None = None, toxicity_model: str | None = None, sarcasm_model: str | None = None) -> Dict:
-    # Update environment-backed model names and rebuild pipelines
+    global engine
+    if _DEMO_MODE:
+        # Model config is irrelevant in demo mode; report current state
+        return engine.get_models()
     if emotion_model:
         os.environ["EMOTION_MODEL"] = emotion_model
     if toxicity_model:
         os.environ["TOXICITY_MODEL"] = toxicity_model
     if sarcasm_model:
         os.environ["SARCASM_MODEL"] = sarcasm_model
-
-    # Recreate engine
+    # Rebuild the lazy engine so next analyze() picks up new env vars
+    engine = LazyNLPEngine()
     return engine.reset()
