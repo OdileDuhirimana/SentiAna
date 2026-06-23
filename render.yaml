@@ -10,8 +10,6 @@ services:
         value: production
       - key: DEMO_MODE
         value: "1"
-      - key: CORS_ALLOWED_ORIGINS
-        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: SENTIMENTSCOPE_API_KEY
