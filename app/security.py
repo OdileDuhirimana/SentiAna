@@ -27,6 +27,8 @@ def create_token(sub: str, ttl_seconds: int = 3600) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 def verify_token(token: str) -> dict:
+    if not JWT_SECRET:
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid token")
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
     except Exception as e:
