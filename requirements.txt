@@ -1,0 +1,19 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+transformers>=4.39.0
+# Torch is installed CPU-only in Dockerfile to avoid CUDA package bloat.
+# For local setup, install CPU torch separately if needed.
+langdetect>=1.0.9
+yake>=0.4.8
+pydantic>=2.8.0
+python-multipart>=0.0.9
+sentencepiece>=0.1.99
+sacremoses>=0.1.1
+redis>=5.0.0
+numpy>=1.26.0
+lime>=0.2.0.1
+PyJWT>=2.8.0
+
+# Database
+SQLAlchemy>=2.0.0
+psycopg[binary]>=3.2.9
