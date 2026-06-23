@@ -1,0 +1,11 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+langdetect>=1.0.9
+yake>=0.4.8
+pydantic>=2.8.0
+python-multipart>=0.0.9
+redis>=5.0.0
+numpy>=1.26.0
+PyJWT>=2.8.0
+SQLAlchemy>=2.0.0
+psycopg[binary]>=3.2.9

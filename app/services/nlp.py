@@ -2,17 +2,28 @@ from functools import lru_cache
 from typing import Dict, List
 from langdetect import detect
 import yake
-from transformers import pipeline
 import os
+try:
+    from transformers import pipeline  # type: ignore
+    _HF_AVAILABLE = True
+except ImportError:
+    pipeline = None  # type: ignore[assignment]
+    _HF_AVAILABLE = False
 try:
     import redis  # type: ignore
 except Exception:
     redis = None
 
+_DEMO_MODE = os.environ.get("DEMO_MODE", "0") in {"1", "true", "True"}
+
 SUPPORTED_LANGS = {"en", "fr", "rw", "sw"}
 
 class NLPEngine:
     def __init__(self) -> None:
+        if not _HF_AVAILABLE:
+            raise RuntimeError(
+                "transformers is not installed. Set DEMO_MODE=1 to run without ML models."
+            )
         self._emotion_model = os.environ.get("EMOTION_MODEL", "SamLowe/roberta-base-go_emotions")
         self._toxicity_model = os.environ.get("TOXICITY_MODEL", "unitary/unbiased-toxic-roberta")
         self._sarcasm_model = os.environ.get("SARCASM_MODEL", "cardiffnlp/twitter-roberta-base-sarcasm")
@@ -267,7 +278,85 @@ class LazyNLPEngine:
         return self.get_models()
 
 
-engine = LazyNLPEngine()
+class DemoNLPEngine:
+    """Lightweight demo engine — no transformer models, no PyTorch.
+    Uses YAKE for keywords and langdetect for language detection;
+    emotion/toxicity scores are rule-based heuristics."""
+
+    _POS = {"good","great","excellent","love","happy","wonderful","amazing","best","thank","awesome","fantastic","brilliant"}
+    _NEG = {"bad","terrible","hate","awful","worst","horrible","disappointing","poor","broken","failed"}
+    _TOX = {"hate","kill","die","stupid","idiot","moron","loser","dumb","useless","worthless"}
+
+    def __init__(self) -> None:
+        self._kw_extractor = yake.KeywordExtractor(lan="en", n=1, top=5)
+        self._emotion_model = "demo"
+        self._emotion2_model = None
+        self._toxicity_model = "demo"
+        self._sarcasm_model = "demo"
+        self._engine = self  # LazyNLPEngine compat
+
+    def analyze(self, text: str, lang_hint: str | None = None) -> Dict:
+        try:
+            raw_lang = detect(text)
+            language = raw_lang if raw_lang in SUPPORTED_LANGS else "en"
+        except Exception:
+            language = "en"
+        if lang_hint and lang_hint in SUPPORTED_LANGS:
+            language = lang_hint
+
+        words = text.lower().split()
+        word_set = set(words)
+        total = max(len(words), 1)
+        pos = len(word_set & self._POS)
+        neg = len(word_set & self._NEG)
+        tox = len(word_set & self._TOX)
+
+        if pos > neg:
+            score_a = round(min(0.93, 0.55 + pos / total * 2), 3)
+            score_b = round(min(0.72, 0.35 + pos / total), 3)
+            emotions: List[Dict] = [{"label": "joy", "score": score_a}, {"label": "admiration", "score": score_b}]
+            pol = "positive"
+        elif neg > 0:
+            score_a = round(min(0.88, 0.50 + neg / total * 2), 3)
+            score_b = round(min(0.65, 0.30 + neg / total), 3)
+            emotions = [{"label": "disappointment", "score": score_a}, {"label": "sadness", "score": score_b}]
+            pol = "negative"
+        else:
+            emotions = [{"label": "neutral", "score": 0.65}, {"label": "approval", "score": 0.32}]
+            pol = "mixed"
+
+        toxic_score = round(min(0.95, 0.04 + tox / total * 3), 3)
+        try:
+            kws = self._kw_extractor.extract_keywords(text)
+            aspects = [{"aspect": k, "sentiment": pol} for k, _ in kws]
+        except Exception:
+            aspects = []
+
+        pos_pol = round(max(0.0, 0.5 + (pos - neg) / total), 3)
+        neg_pol = round(max(0.0, 0.5 + (neg - pos) / total), 3)
+        return {
+            "emotions": emotions,
+            "toxicity": {"toxic": toxic_score, "non-toxic": round(1.0 - toxic_score, 3)},
+            "sarcasm": {},
+            "sarcasm_likelihood": 0.0,
+            "aspects": aspects,
+            "language": language,
+            "text_en": text,
+            "polarity": {"positive": pos_pol, "neutral": round(max(0.0, 1.0 - pos_pol - neg_pol), 3), "negative": neg_pol},
+            "demo": True,
+        }
+
+    def get_models(self) -> Dict:
+        return {"emotion_model": "demo", "second_emotion_model": None, "toxicity_model": "demo", "sarcasm_model": "demo"}
+
+    def reset(self) -> Dict:
+        return self.get_models()
+
+    def __getattr__(self, name: str):
+        raise AttributeError(f"DemoNLPEngine has no attribute '{name}'")
+
+
+engine: LazyNLPEngine | DemoNLPEngine = DemoNLPEngine() if _DEMO_MODE else LazyNLPEngine()
 
 def reload_models(emotion_model: str | None = None, toxicity_model: str | None = None, sarcasm_model: str | None = None) -> Dict:
     # Update environment-backed model names and rebuild pipelines
